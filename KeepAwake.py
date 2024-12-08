@@ -1,5 +1,6 @@
 import ctypes
 import tkinter as tk
+import atexit
 
 # Constants for the "SetThreadExecutionState" function
 ES_CONTINUOUS = 0x80000000
@@ -19,6 +20,9 @@ class KeepAwakeApp:
         # Label to show the status
         self.status_label = tk.Label(root, text="Status: Disabled", fg="red")
         self.status_label.pack()
+
+        # Ensure the system reverts to normal when the program exits or crashes
+        atexit.register(self.disable_keep_awake)
 
     def toggle_keep_awake(self):
         if not self.keep_awake:
