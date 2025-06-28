@@ -1,75 +1,92 @@
-import imaplib
-import smtplib
-import email
-from email.header import decode_header
+# pip install --upgrade google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client beautifulsoup4 requests
+
+import os.path
+import base64
 import re
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
+from bs4 import BeautifulSoup
+import requests
 
-# Email account credentials
-EMAIL = "your_email@gmail.com"
-PASSWORD = "your_password"
-IMAP_SERVER = "imap.your_email_provider.com"  # e.g., imap.gmail.com
-SMTP_SERVER = "smtp.your_email_provider.com"  # e.g., smtp.gmail.com
-SMTP_PORT = 587  # For TLS connections
+# Scopes for reading and modifying emails
+SCOPES = [
+    'https://www.googleapis.com/auth/gmail.modify',
+    'https://www.googleapis.com/auth/gmail.readonly'
+]
 
-def connect_to_email():
-    """Connect to the email server."""
-    try:
-        mail = imaplib.IMAP4_SSL(IMAP_SERVER)
-        mail.login(EMAIL, PASSWORD)
-        return mail
-    except Exception as e:
-        print(f"Failed to connect: {e}")
-        return None
 
-def search_unsubscribe_emails(mail):
-    """Search for emails with unsubscribe links."""
-    mail.select("inbox")
-    _, messages = mail.search(None, 'ALL')
+def get_unsubscribe_links(service, user_id='me'):
+    """Fetch unsubscribe links from unread emails."""
+    results = service.users().messages().list(userId=user_id, q="is:unread").execute()
+    messages = results.get('messages', [])
 
-    email_ids = messages[0].split()
     unsubscribe_links = []
 
-    for email_id in email_ids:
-        _, msg = mail.fetch(email_id, "(RFC822)")
-        for response in msg:
-            if isinstance(response, tuple):
-                msg = email.message_from_bytes(response[1])
-                # Decode email subject
-                subject = decode_header(msg["Subject"])[0][0]
-                if isinstance(subject, bytes):
-                    subject = subject.decode()
-                # Search for unsubscribe link in email content
-                if msg.is_multipart():
-                    for part in msg.walk():
-                        if part.get_content_type() == "text/html":
-                            body = part.get_payload(decode=True).decode()
-                            # Find unsubscribe links
-                            links = re.findall(r'href=["\'](https?://[^"\']*unsubscribe[^"\']*)["\']', body, re.IGNORECASE)
-                            unsubscribe_links.extend(links)
-                else:
-                    body = msg.get_payload(decode=True).decode()
-                    links = re.findall(r'href=["\'](https?://[^"\']*unsubscribe[^"\']*)["\']', body, re.IGNORECASE)
-                    unsubscribe_links.extend(links)
+    for msg in messages:
+        msg_id = msg['id']
+        msg = service.users().messages().get(userId=user_id, id=msg_id).execute()
+        payload = msg['payload']
+        headers = payload['headers']
+
+        # Look for "List-Unsubscribe" in headers
+        for header in headers:
+            if header['name'].lower() == "list-unsubscribe":
+                links = re.findall(r'<(https?://[^>]+)>', header['value'])
+                unsubscribe_links.extend(links)
+
+        # If "List-Unsubscribe" not found, look in the body
+        if 'parts' in payload['body']:
+            body = base64.urlsafe_b64decode(payload['body']['data']).decode('utf-8')
+            soup = BeautifulSoup(body, 'html.parser')
+            links = soup.find_all('a', href=True, string=re.compile(r'unsubscribe', re.I))
+            unsubscribe_links.extend(link['href'] for link in links)
+
     return unsubscribe_links
 
-def send_unsubscribe_requests(links):
-    """Send unsubscribe requests."""
-    with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-        server.starttls()
-        server.login(EMAIL, PASSWORD)
-        for link in links:
-            print(f"Unsubscribing via: {link}")
-            # Normally, you would click the link manually. Automating web interaction
-            # for unsubscribing might require tools like Selenium or requests.
 
-if __name__ == "__main__":
-    mail = connect_to_email()
-    if mail:
-        print("Searching for emails with unsubscribe links...")
-        links = search_unsubscribe_emails(mail)
+def unsubscribe_from_links(links):
+    """Visit each unsubscribe link."""
+    for link in links:
+        try:
+            response = requests.get(link)
+            if response.status_code == 200:
+                print(f"Successfully unsubscribed via {link}")
+            else:
+                print(f"Failed to unsubscribe via {link}")
+        except Exception as e:
+            print(f"Error visiting {link}: {e}")
+
+
+def main():
+    """Main function to handle authentication and unsubscribe."""
+    creds = None
+    if os.path.exists('token.json'):
+        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file(
+                'credentials.json', SCOPES)
+            creds = flow.run_local_server(port=0)
+        with open('token.json', 'w') as token:
+            token.write(creds.to_json())
+
+    try:
+        service = build('gmail', 'v1', credentials=creds)
+        print("Fetching unsubscribe links...")
+        links = get_unsubscribe_links(service)
         if links:
-            print(f"Found {len(links)} unsubscribe links.")
-            send_unsubscribe_requests(links)
+            print(f"Found {len(links)} unsubscribe links. Unsubscribing...")
+            unsubscribe_from_links(links)
         else:
             print("No unsubscribe links found.")
-        mail.logout()
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+
+if __name__ == '__main__':
+    main()
+
