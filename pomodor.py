@@ -43,10 +43,42 @@ class PomodoroCalculator:
         self.total_worked_minutes += total_minutes
         self.save_state()  # Auto-save after adding time
 
+        return self.calculate_sessions_and_breaks(total_minutes)
+
+    def remove_work_time(self, hours, minutes):
+        """Remove work time and automatically save state"""
+        total_minutes_to_remove = hours * 60 + minutes
+
+        # Calculate total available time
+        total_available = self.total_worked_minutes + self.position_in_session
+
+        if total_minutes_to_remove > total_available:
+            print(f"Warning: Cannot remove {total_minutes_to_remove} minutes.")
+            print(f"Only {total_available} minutes available.")
+            return None
+
+        # Remove the time
+        remaining_to_remove = total_minutes_to_remove
+
+        # First, remove from position_in_session
+        if remaining_to_remove <= self.position_in_session:
+            self.position_in_session -= remaining_to_remove
+            remaining_to_remove = 0
+        else:
+            remaining_to_remove -= self.position_in_session
+            self.position_in_session = 0
+
+        # Then remove from total_worked_minutes
+        if remaining_to_remove > 0:
+            self.total_worked_minutes -= remaining_to_remove
+
+        self.save_state()  # Auto-save after removing time
+
+        print(f"Removed {hours}h {minutes}m successfully!")
         return self.calculate_sessions_and_breaks()
 
-    def calculate_sessions_and_breaks(self):
-        """Calculate sessions and breaks based on current state"""
+    def calculate_sessions_and_breaks(self, current_input_minutes=0):
+        """Calculate sessions and breaks based on current state and current input time"""
         total_minutes = self.total_worked_minutes + self.position_in_session
         full_sessions = total_minutes // 25
         remaining_minutes = total_minutes % 25
@@ -58,6 +90,12 @@ class PomodoroCalculator:
         # Total break time
         total_break_time = long_breaks * 20 + short_breaks * 5
 
+        # Calculate break time earned for current input only
+        current_full_sessions = current_input_minutes // 25
+        current_long_breaks = current_full_sessions // 4
+        current_short_breaks = current_full_sessions - current_long_breaks
+        current_break_time = current_long_breaks * 20 + current_short_breaks * 5
+
         # Update position in session
         self.position_in_session = remaining_minutes
 
@@ -67,6 +105,7 @@ class PomodoroCalculator:
             'long_breaks': long_breaks,
             'short_breaks': short_breaks,
             'total_break_time': total_break_time,
+            'current_break_time': current_break_time,
             'position_in_session': self.position_in_session
         }
 
@@ -96,11 +135,12 @@ def main():
     while True:
         print("\n=== Pomodoro Calculator ===")
         print("1. Add work time")
-        print("2. Check status")
-        print("3. Reset progress")
-        print("4. Exit")
+        print("2. Remove work time")
+        print("3. Check status")
+        print("4. Reset progress")
+        print("5. Exit")
 
-        choice = input("Choose option (1-4): ").strip()
+        choice = input("Choose option (1-5): ").strip()
 
         if choice == '1':
             try:
@@ -110,21 +150,35 @@ def main():
 
                 print(f"\nAdded {hours}h {minutes}m")
                 print(f"Sessions: {result['full_sessions']}")
-                print(f"Break time earned: {result['total_break_time']} minutes")
+                print(f"Break time earned: {result['current_break_time']} minutes")
                 print(f"Current session: {result['position_in_session']}/25 minutes")
 
             except ValueError:
                 print("Please enter valid numbers!")
 
         elif choice == '2':
-            pomodoro.get_status()
+            try:
+                hours = int(input("Hours to remove: "))
+                minutes = int(input("Minutes to remove: "))
+                result = pomodoro.remove_work_time(hours, minutes)
+
+                if result:
+                    print(f"\nRemoved {hours}h {minutes}m")
+                    print(f"Remaining sessions: {result['full_sessions']}")
+                    print(f"Current session: {result['position_in_session']}/25 minutes")
+
+            except ValueError:
+                print("Please enter valid numbers!")
 
         elif choice == '3':
+            pomodoro.get_status()
+
+        elif choice == '4':
             confirm = input("Reset all progress? (y/n): ").lower()
             if confirm == 'y':
                 pomodoro.reset()
 
-        elif choice == '4':
+        elif choice == '5':
             print("Goodbye! Your progress is saved.")
             break
 
