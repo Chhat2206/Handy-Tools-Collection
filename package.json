@@ -1,0 +1,24 @@
+{
+  "name": "handy-tools-collection",
+  "version": "1.0.0",
+  "description": "Tool for useful scripts I need. So far, the functionalities are:\r - auto unsubs from emails\r - jiggles mouse\r - keeps pc awake for as long as wanted\r - m2ts for mp4 ffmpeg batch converted",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Chhat2206/Handy-Tools-Collection.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Chhat2206/Handy-Tools-Collection/issues"
+  },
+  "homepage": "https://github.com/Chhat2206/Handy-Tools-Collection#readme",
+  "dependencies": {
+    "playwright": "^1.55.0"
+  }
+}
